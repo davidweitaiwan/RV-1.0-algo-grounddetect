@@ -1,0 +1,25 @@
+#config/common.yaml
+
+---
+topic_ZEDCam_RGB: # Recv ZED RGB Image
+    nodeName : "grounddetect_rgb_0_node" # Ignore
+    topicName : "zed_rgb_0"
+
+topic_ZEDCam_Depth: # Recv ZED Depth Image
+    nodeName : "grounddetect_depth_0_node" # Ignore
+    topicName : "zed_depth_0"
+
+topic_GroundDetect: # Publish Ground Detect Result
+    nodeName : "grounddetect_0_node" # Ignore
+    topicName : "grounddetect_0"
+
+service_SafetyServer:
+    serviceName : "safety_0"
+
+node_prop:
+    nodeName : "grounddetect_0_node" # Primary
+    namespace : "V0"
+
+camera_prop:
+    width : 640 # Publish resolution
+    height : 360
