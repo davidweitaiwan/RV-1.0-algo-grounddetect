@@ -13,13 +13,13 @@ topic_GroundDetect: # Publish Ground Detect Result
     nodeName : "grounddetect_0_node" # Ignore
     topicName : "grounddetect_0"
 
-service_SafetyServer:
-    serviceName : "safety_0"
-
-node_prop:
-    nodeName : "grounddetect_0_node" # Primary
-    namespace : "V0"
-
 camera_prop:
     width : 640 # Publish resolution
     height : 360
+
+generic_prop:
+    nodeName : "grounddetect_0_node" # Primary
+    namespace : "V0"
+    qosService : "qos_0"
+    safetyService : "safety_0"
+    timesyncService : "timesync_0"

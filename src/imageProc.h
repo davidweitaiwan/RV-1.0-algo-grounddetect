@@ -27,19 +27,18 @@ class Params : public rclcpp::Node
 public:
     // Zed RGB & Depth Image Recv
     std::string topic_ZEDCam_RGB_nodeName = "grounddetect_rgb_0_node";
-    std::string topic_ZEDCam_RGB_topicName = "V0/zed_rgb_0";
+    std::string topic_ZEDCam_RGB_topicName = "zed_rgb_0";
     std::string topic_ZEDCam_Depth_nodeName = "grounddetect_depth_0_node";
-    std::string topic_ZEDCam_Depth_topicName = "V0/zed_depth_0";
+    std::string topic_ZEDCam_Depth_topicName = "zed_depth_0";
 
     // Publish Result
     std::string topic_GroundDetect_nodeName = "grounddetect_img_0_node";
-    std::string topic_GroundDetect_topicName = "V0/grounddetect_0";
+    std::string topic_GroundDetect_topicName = "grounddetect_0";
 
     // Register to Safety Server
-    std::string service_SafetyServer_serviceName = "V0_Z0/safety_0";
+    std::string safetyService = "safety_0";
 
-    std::string mainNodeName = "grounddetect_node";
-    std::string mainNamespace = "V0_Z0";
+    std::string nodeName = "grounddetect_0_node";
 
     int mainCameraWidth = 1280;
     int mainCameraHeight = 720;
@@ -55,10 +54,9 @@ private:
         this->get_parameter("topic_GroundDetect_nodeName", this->topic_GroundDetect_nodeName);
         this->get_parameter("topic_GroundDetect_topicName", this->topic_GroundDetect_topicName);
 
-        this->get_parameter("service_SafetyServer_serviceName", this->service_SafetyServer_serviceName);
+        this->get_parameter("safetyService", this->safetyService);
 
-        this->get_parameter("mainNodeName", this->mainNodeName);
-        this->get_parameter("mainNamespace", this->mainNamespace);
+        this->get_parameter("nodeName", this->nodeName);
 
         this->get_parameter("mainCameraWidth", this->mainCameraWidth);
         this->get_parameter("mainCameraHeight", this->mainCameraHeight);
@@ -75,10 +73,9 @@ public:
         this->declare_parameter<std::string>("topic_GroundDetect_nodeName", this->topic_GroundDetect_nodeName);
         this->declare_parameter<std::string>("topic_GroundDetect_topicName", this->topic_GroundDetect_topicName);
 
-        this->declare_parameter<std::string>("service_SafetyServer_serviceName", this->service_SafetyServer_serviceName);
+        this->declare_parameter<std::string>("safetyService", this->safetyService);
 
-        this->declare_parameter<std::string>("mainNodeName", this->mainNodeName);
-        this->declare_parameter<std::string>("mainNamespace", this->mainNamespace);
+        this->declare_parameter<std::string>("nodeName", this->nodeName);
 
         this->declare_parameter<int>("mainCameraWidth", this->mainCameraWidth);
         this->declare_parameter<int>("mainCameraHeight", this->mainCameraHeight);
@@ -86,8 +83,13 @@ public:
     }
 };
 
+#define TS_MODE
 
+#ifdef TS_MODE
+class ImageSubNode : public TimeSyncNode
+#else
 class ImageSubNode : public rclcpp::Node
+#endif
 {
 private:
     rclcpp::Subscription<vehicle_interfaces::msg::Image>::SharedPtr subscription_;
@@ -139,10 +141,18 @@ private:
         RCLCPP_INFO(this->get_logger(), "I heard: foramt: %d, width: %d, height: %d", 
             msg->format_order_type, msg->width, msg->height);
 #endif
+
+#ifdef TS_MODE
+        printf("Transmit time:\t%f ms\n", (this->getTimestamp() - (rclcpp::Time)(msg->header.stamp)).seconds() * 1000.0);
+#endif
     }
 
 public:
-    ImageSubNode(const std::string& nodeName, const std::string& topicName, cv::Mat& initMat) : rclcpp::Node(nodeName)
+    ImageSubNode(const std::string& nodeName, const std::string& topicName, cv::Mat& initMat) : 
+#ifdef TS_MODE
+        TimeSyncNode(nodeName, "safety_0", 10000, 2), 
+#endif
+        rclcpp::Node(nodeName)
     {
         this->recvMat_ = initMat.clone();
             this->outMat_ = initMat.clone();
@@ -217,27 +227,34 @@ private:
     cv::Mat rgbInitMat_;
     cv::Mat depthInitMat_;
 
+    bool exitF_;
+
 public:
-    ZEDNode(std::shared_ptr<Params> params)
+    ZEDNode(std::shared_ptr<Params> params) : exitF_(false)
     {
         this->params_ = params;
         this->rgbInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_8UC3, cv::Scalar(50));
         this->depthInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_32FC1, cv::Scalar(50));
         
-        this->safetyNode_ = std::make_shared<SafetyNode>(params->mainNodeName, params->service_SafetyServer_serviceName);
+        this->safetyNode_ = std::make_shared<SafetyNode>(params->nodeName, params->safetyService);
         this->safetyExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->safetyExec_->add_node(this->safetyNode_);
-        this->safetyNodeTh_ = std::thread(SpinNodeExecutor, this->safetyExec_, params->mainNodeName + "_safety");
+        this->safetyNodeTh_ = std::thread(SpinNodeExecutor, this->safetyExec_, params->nodeName + "_safety");
         
-        this->rgbNode_ = std::make_shared<ImageSubNode>(params->mainNodeName + "_rgb", params->topic_ZEDCam_RGB_topicName, this->rgbInitMat_);
+        this->rgbNode_ = std::make_shared<ImageSubNode>(params->nodeName + "_rgb", params->topic_ZEDCam_RGB_topicName, this->rgbInitMat_);
         this->rgbExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->rgbExec_->add_node(this->rgbNode_);
-        this->rgbNodeTh_ = std::thread(SpinNodeExecutor, this->rgbExec_, params->mainNodeName + "_rgb");
+        this->rgbNodeTh_ = std::thread(SpinNodeExecutor, this->rgbExec_, params->nodeName + "_rgb");
         
-        this->depthNode_ = std::make_shared<ImageSubNode>(params->mainNodeName + "_depth", params->topic_ZEDCam_Depth_topicName, this->depthInitMat_);
+        this->depthNode_ = std::make_shared<ImageSubNode>(params->nodeName + "_depth", params->topic_ZEDCam_Depth_topicName, this->depthInitMat_);
         this->depthExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->depthExec_->add_node(this->depthNode_);
-        this->depthNodeTh_ = std::thread(SpinNodeExecutor, this->depthExec_, params->mainNodeName + "_depth");
+        this->depthNodeTh_ = std::thread(SpinNodeExecutor, this->depthExec_, params->nodeName + "_depth");
+    }
+
+    ~ZEDNode()
+    {
+        close();
     }
 
     void getRGBImage(cv::Mat& outputMat, bool& newF)
@@ -252,17 +269,20 @@ public:
 
     void setEmergency(float em)
     {
-        this->safetyNode_->setEmergency(this->params_->mainNodeName, em);
+        this->safetyNode_->setEmergency(this->params_->nodeName, em);
     }
 
     void close()
     {
+        if (this->exitF_)
+            return;
         this->rgbExec_->cancel();
         this->depthExec_->cancel();
         this->safetyExec_->cancel();
         this->rgbNodeTh_.join();
         this->depthNodeTh_.join();
         this->safetyNodeTh_.join();
+        this->exitF_ = true;
     }
 };
 

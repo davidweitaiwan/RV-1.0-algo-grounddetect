@@ -13,7 +13,7 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package="cpp_zeddetect",
-            node_namespace=data['node_prop']['namespace'],
+            node_namespace=data['generic_prop']['namespace'],
             node_executable="zed",
             output="screen",
             emulate_tty=True,
@@ -25,11 +25,12 @@ def generate_launch_description():
                     "topic_ZEDCam_Depth_topicName" : data['topic_ZEDCam_Depth']['topicName'], 
                     "topic_GroundDetect_nodeName" : data['topic_GroundDetect']['nodeName'], 
                     "topic_GroundDetect_topicName" : data['topic_GroundDetect']['topicName'], 
-                    "service_SafetyServer_serviceName" : data['service_SafetyServer']['serviceName'], 
-                    "mainNodeName" : data['node_prop']['nodeName'], 
-                    "mainNamespace" : data['node_prop']['namespace'], 
                     "mainCameraWidth" : data['camera_prop']['width'], 
                     "mainCameraHeight" : data['camera_prop']['height'], 
+                    "nodeName" : data['generic_prop']['nodeName'], 
+                    "qosService" : data['generic_prop']['qosService'], 
+                    "safetyService" : data['generic_prop']['safetyService'], 
+                    "timesyncService" : data['generic_prop']['timesyncService'], 
                 }
             ]
         )

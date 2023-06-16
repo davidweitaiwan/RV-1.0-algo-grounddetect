@@ -200,7 +200,7 @@ int main(int argc, char **argv)
 	std::this_thread::sleep_for(1s);
 
 	// ImagePublisher (TODO: refine Image.msg)
-	auto imgPub = std::make_shared<ImagePublisher>(params->mainNodeName, params->topic_GroundDetect_topicName);
+	auto imgPub = std::make_shared<ImagePublisher>(params->nodeName, params->topic_GroundDetect_topicName);
 	cv::Size pubImgSize(params->mainCameraWidth, params->mainCameraHeight);
 
     std::vector<int> encodeParam;
