@@ -2,24 +2,29 @@
 
 ---
 topic_ZEDCam_RGB: # Recv ZED RGB Image
-    nodeName : "grounddetect_rgb_0_node" # Ignore
-    topicName : "zed_rgb_0"
+    nodeName : "grounddetect_rgb" # Automatically formed to "<nodeName>_<id>_node"
+    topicName : "zed_rgb_0" # ID suffix required
 
 topic_ZEDCam_Depth: # Recv ZED Depth Image
-    nodeName : "grounddetect_depth_0_node" # Ignore
-    topicName : "zed_depth_0"
+    nodeName : "grounddetect_depth" # Automatically formed to "<nodeName>_<id>_node"
+    topicName : "zed_depth_0" # ID suffix required
 
 topic_GroundDetect: # Publish Ground Detect Result
-    nodeName : "grounddetect_0_node" # Ignore
-    topicName : "grounddetect_0"
+    nodeName : "grounddetectpub" # Automatically formed to "<nodeName>_<id>_node"
+    topicName : "grounddetect" # The _id number will added in suffix, i.e. "<topicName>_<id>"
 
 camera_prop:
     width : 640 # Publish resolution
     height : 360
 
+# Settings for Params class under vehicle_interfaces/params.h
+# The nodeName describes the name of node, the name will be automatically formed to "<nodeName>_<id>_node"
 generic_prop:
-    nodeName : "grounddetect_0_node" # Primary
     namespace : "V0"
+    nodeName : "grounddetect"
+    id : 0 # Frequently changed parameter
     qosService : "qos_0"
     safetyService : "safety_0"
     timesyncService : "timesync_0"
+    timesyncInterval_ms : 3000000.0
+    timesyncAccuracy_ms : 2.0

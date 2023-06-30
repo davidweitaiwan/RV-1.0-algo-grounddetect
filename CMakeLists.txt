@@ -32,6 +32,16 @@ find_package(OpenCV ${VERSION_REQ_OCV} REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 link_directories(${OpenCV_LIBRARY_DIRS})
 
+SET(ENABLE_TS_NODE False CACHE BOOL "Some user-specified option")
+if( ENABLE_TS_NODE ) 
+  add_compile_options(-DTS_NODE)
+endif()
+
+SET(ENABLE_QOS_NODE False CACHE BOOL "Some user-specified option")
+if( ENABLE_QOS_NODE ) 
+  add_compile_options(-DQOS_NODE)
+endif()
+
 set(src_file
   "src/cameramodule.cpp"
   "src/grounddot.cpp"

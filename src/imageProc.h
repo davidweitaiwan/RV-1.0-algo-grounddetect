@@ -6,8 +6,9 @@
 
 #include "vehicle_interfaces/msg/image.hpp"
 
-#include "vehicle_interfaces/timesync.h"
+#include "vehicle_interfaces/params.h"
 #include "vehicle_interfaces/safety.h"
+#include "vehicle_interfaces/timesync.h"
 
 #include <opencv2/opencv.hpp>
 #include <mutex>
@@ -19,10 +20,12 @@
 using namespace std::placeholders;
 using namespace std::chrono_literals;
 
+#define TS_NODE// Enable TimeSyncNode
+
 void SpinNodeExecutor(rclcpp::executors::SingleThreadedExecutor* exec, std::string threadName);
 
 
-class Params : public rclcpp::Node
+class Params : public vehicle_interfaces::GenericParams
 {
 public:
     // Zed RGB & Depth Image Recv
@@ -34,11 +37,6 @@ public:
     // Publish Result
     std::string topic_GroundDetect_nodeName = "grounddetect_img_0_node";
     std::string topic_GroundDetect_topicName = "grounddetect_0";
-
-    // Register to Safety Server
-    std::string safetyService = "safety_0";
-
-    std::string nodeName = "grounddetect_0_node";
 
     int mainCameraWidth = 1280;
     int mainCameraHeight = 720;
@@ -54,16 +52,12 @@ private:
         this->get_parameter("topic_GroundDetect_nodeName", this->topic_GroundDetect_nodeName);
         this->get_parameter("topic_GroundDetect_topicName", this->topic_GroundDetect_topicName);
 
-        this->get_parameter("safetyService", this->safetyService);
-
-        this->get_parameter("nodeName", this->nodeName);
-
         this->get_parameter("mainCameraWidth", this->mainCameraWidth);
         this->get_parameter("mainCameraHeight", this->mainCameraHeight);
     }
 
 public:
-    Params(std::string nodeName) : Node(nodeName)
+    Params(std::string nodeName) : vehicle_interfaces::GenericParams(nodeName)
     {
         this->declare_parameter<std::string>("topic_ZEDCam_RGB_nodeName", this->topic_ZEDCam_RGB_nodeName);
         this->declare_parameter<std::string>("topic_ZEDCam_RGB_topicName", this->topic_ZEDCam_RGB_topicName);
@@ -73,20 +67,15 @@ public:
         this->declare_parameter<std::string>("topic_GroundDetect_nodeName", this->topic_GroundDetect_nodeName);
         this->declare_parameter<std::string>("topic_GroundDetect_topicName", this->topic_GroundDetect_topicName);
 
-        this->declare_parameter<std::string>("safetyService", this->safetyService);
-
-        this->declare_parameter<std::string>("nodeName", this->nodeName);
-
         this->declare_parameter<int>("mainCameraWidth", this->mainCameraWidth);
         this->declare_parameter<int>("mainCameraHeight", this->mainCameraHeight);
         this->_getParams();
     }
 };
 
-#define TS_MODE
 
-#ifdef TS_MODE
-class ImageSubNode : public TimeSyncNode
+#ifdef TS_NODE
+class ImageSubNode : public vehicle_interfaces::PseudoTimeSyncNode
 #else
 class ImageSubNode : public rclcpp::Node
 #endif
@@ -142,15 +131,15 @@ private:
             msg->format_order_type, msg->width, msg->height);
 #endif
 
-#ifdef TS_MODE
+#ifdef TS_NODE
         printf("Transmit time:\t%f ms\n", (this->getTimestamp() - (rclcpp::Time)(msg->header.stamp)).seconds() * 1000.0);
 #endif
     }
 
 public:
     ImageSubNode(const std::string& nodeName, const std::string& topicName, cv::Mat& initMat) : 
-#ifdef TS_MODE
-        TimeSyncNode(nodeName, "safety_0", 10000, 2), 
+#ifdef TS_NODE
+        vehicle_interfaces::PseudoTimeSyncNode(nodeName), 
 #endif
         rclcpp::Node(nodeName)
     {
@@ -174,18 +163,29 @@ public:
     }
 };
 
-
+#ifdef TS_NODE
+class ImagePublisher : public vehicle_interfaces::TimeSyncNode
+#else
 class ImagePublisher : public rclcpp::Node
+#endif
 {
 private:
+    std::shared_ptr<Params> params;
     rclcpp::Publisher<vehicle_interfaces::msg::Image>::SharedPtr pub_;
     std::string nodeName_;
 
 public:
-    ImagePublisher(const std::string& nodeName, const std::string& topicName) : rclcpp::Node(nodeName)
+    ImagePublisher(const std::shared_ptr<Params>& params) : 
+#ifdef TS_NODE
+    vehicle_interfaces::TimeSyncNode(params->topic_GroundDetect_nodeName, params->timesyncService, params->timesyncInterval_ms, params->timesyncAccuracy_ms), 
+#endif
+    rclcpp::Node(params->topic_GroundDetect_nodeName), 
+    params(params)
     {
-        this->nodeName_ = nodeName;
-        this->pub_ = this->create_publisher<vehicle_interfaces::msg::Image>(topicName, 10);
+        this->nodeName_ = params->topic_GroundDetect_nodeName;
+
+
+        this->pub_ = this->create_publisher<vehicle_interfaces::msg::Image>(params->topic_GroundDetect_topicName, 10);
     }
 
     void pubImage(const std::vector<uchar>& dataVec, const cv::Size& sz)
@@ -196,9 +196,16 @@ public:
         msg.header.device_type = vehicle_interfaces::msg::Header::DEVTYPE_IMAGE;
         msg.header.device_id = this->nodeName_;
         msg.header.frame_id = frame_id++;
+#ifdef TS_NODE
+        msg.header.stamp_type = this->getTimestampType();
+        msg.header.stamp = this->getTimestamp();
+        msg.header.stamp_offset = this->getCorrectDuration().nanoseconds();
+#else
         msg.header.stamp_type = vehicle_interfaces::msg::Header::STAMPTYPE_NONE_UTC_SYNC;
         msg.header.stamp = this->get_clock()->now();
-
+        msg.header.stamp_offset = 0;
+#endif
+        msg.header.ref_publish_time_ms = 0;// Depend on ZED publisher
         msg.format_type = msg.FORMAT_JPEG;
         msg.width = sz.width;
         msg.height = sz.height;
@@ -214,7 +221,7 @@ private:
     std::shared_ptr<Params> params_;
     std::shared_ptr<ImageSubNode> rgbNode_;
     std::shared_ptr<ImageSubNode> depthNode_;
-    std::shared_ptr<SafetyNode> safetyNode_;
+    std::shared_ptr<vehicle_interfaces::SafetyNode> safetyNode_;
 
     rclcpp::executors::SingleThreadedExecutor* rgbExec_;
     rclcpp::executors::SingleThreadedExecutor* depthExec_;
@@ -236,20 +243,20 @@ public:
         this->rgbInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_8UC3, cv::Scalar(50));
         this->depthInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_32FC1, cv::Scalar(50));
         
-        this->safetyNode_ = std::make_shared<SafetyNode>(params->nodeName, params->safetyService);
+        this->safetyNode_ = std::make_shared<vehicle_interfaces::SafetyNode>(params->nodeName, params->safetyService);
         this->safetyExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->safetyExec_->add_node(this->safetyNode_);
         this->safetyNodeTh_ = std::thread(SpinNodeExecutor, this->safetyExec_, params->nodeName + "_safety");
         
-        this->rgbNode_ = std::make_shared<ImageSubNode>(params->nodeName + "_rgb", params->topic_ZEDCam_RGB_topicName, this->rgbInitMat_);
+        this->rgbNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_RGB_nodeName, params->topic_ZEDCam_RGB_topicName, this->rgbInitMat_);
         this->rgbExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->rgbExec_->add_node(this->rgbNode_);
-        this->rgbNodeTh_ = std::thread(SpinNodeExecutor, this->rgbExec_, params->nodeName + "_rgb");
+        this->rgbNodeTh_ = std::thread(SpinNodeExecutor, this->rgbExec_, params->topic_ZEDCam_RGB_nodeName);
         
-        this->depthNode_ = std::make_shared<ImageSubNode>(params->nodeName + "_depth", params->topic_ZEDCam_Depth_topicName, this->depthInitMat_);
+        this->depthNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_Depth_nodeName, params->topic_ZEDCam_Depth_topicName, this->depthInitMat_);
         this->depthExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->depthExec_->add_node(this->depthNode_);
-        this->depthNodeTh_ = std::thread(SpinNodeExecutor, this->depthExec_, params->nodeName + "_depth");
+        this->depthNodeTh_ = std::thread(SpinNodeExecutor, this->depthExec_, params->topic_ZEDCam_Depth_nodeName);
     }
 
     ~ZEDNode()
@@ -293,7 +300,7 @@ private:
     float rate_;
     int frameCnt_;
     std::chrono::duration<int, std::milli> interval_ms_;
-    Timer* timer_;
+    vehicle_interfaces::Timer* timer_;
 
     std::mutex locker_;
 
@@ -326,7 +333,7 @@ public:
         this->rate_ = 0;
         this->frameCnt_ = 0;
         this->interval_ms_ = std::chrono::milliseconds(interval_ms);
-        this->timer_ = new Timer(interval_ms, std::bind(&WorkingRate::_timerCallback, this));
+        this->timer_ = new vehicle_interfaces::Timer(interval_ms, std::bind(&WorkingRate::_timerCallback, this));
     }
 
     ~WorkingRate()
@@ -353,7 +360,7 @@ private:
     std::vector<float> rateVec_;
     std::vector<int> cntVec_;
     std::chrono::duration<int, std::milli> interval_ms_;
-    Timer* timer_;
+    vehicle_interfaces::Timer* timer_;
 
     std::mutex locker_;
 
@@ -375,7 +382,7 @@ public:
         this->rateVec_ = std::vector<float>(numOfWorkers, 0);
         this->cntVec_ = std::vector<int>(numOfWorkers, 0);
         this->interval_ms_ = std::chrono::milliseconds(interval_ms);
-        this->timer_ = new Timer(interval_ms, std::bind(&MultiWorkingRate::_timerCallback, this));
+        this->timer_ = new vehicle_interfaces::Timer(interval_ms, std::bind(&MultiWorkingRate::_timerCallback, this));
     }
 
     ~MultiWorkingRate()

@@ -19,18 +19,24 @@ def generate_launch_description():
             emulate_tty=True,
             parameters=[
                 {
-                    "topic_ZEDCam_RGB_nodeName" : data['topic_ZEDCam_RGB']['nodeName'], 
+                    "topic_ZEDCam_RGB_nodeName" : data['topic_ZEDCam_RGB']['nodeName'] + '_' + str(data['generic_prop']['id']) + '_node', 
                     "topic_ZEDCam_RGB_topicName" : data['topic_ZEDCam_RGB']['topicName'], 
-                    "topic_ZEDCam_Depth_nodeName" : data['topic_ZEDCam_Depth']['nodeName'], 
+                    "topic_ZEDCam_Depth_nodeName" : data['topic_ZEDCam_Depth']['nodeName'] + '_' + str(data['generic_prop']['id']) + '_node', 
                     "topic_ZEDCam_Depth_topicName" : data['topic_ZEDCam_Depth']['topicName'], 
-                    "topic_GroundDetect_nodeName" : data['topic_GroundDetect']['nodeName'], 
-                    "topic_GroundDetect_topicName" : data['topic_GroundDetect']['topicName'], 
+                    "topic_GroundDetect_nodeName" : data['topic_GroundDetect']['nodeName'] + '_' + str(data['generic_prop']['id']) + '_node', 
+                    "topic_GroundDetect_topicName" : data['topic_GroundDetect']['topicName'] + '_' + str(data['generic_prop']['id']), 
                     "mainCameraWidth" : data['camera_prop']['width'], 
                     "mainCameraHeight" : data['camera_prop']['height'], 
-                    "nodeName" : data['generic_prop']['nodeName'], 
+
+                    # Settings for Params class under vehicle_interfaces/params.h
+                    # Do not change the settings rashly
+                    "nodeName" : data['generic_prop']['nodeName'] + '_' + str(data['generic_prop']['id']) + '_node', 
+                    "id" : data['generic_prop']['id'], 
                     "qosService" : data['generic_prop']['qosService'], 
                     "safetyService" : data['generic_prop']['safetyService'], 
                     "timesyncService" : data['generic_prop']['timesyncService'], 
+                    "timesyncInterval_ms" : data['generic_prop']['timesyncInterval_ms'], 
+                    "timesyncAccuracy_ms" : data['generic_prop']['timesyncAccuracy_ms'], 
                 }
             ]
         )
