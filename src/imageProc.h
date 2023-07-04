@@ -6,9 +6,7 @@
 
 #include "vehicle_interfaces/msg/image.hpp"
 
-#include "vehicle_interfaces/params.h"
-#include "vehicle_interfaces/safety.h"
-#include "vehicle_interfaces/timesync.h"
+#include "vehicle_interfaces/vehicle_interfaces.h"
 
 #include <opencv2/opencv.hpp>
 #include <mutex>
@@ -19,8 +17,6 @@
 
 using namespace std::placeholders;
 using namespace std::chrono_literals;
-
-#define TS_NODE// Enable TimeSyncNode
 
 void SpinNodeExecutor(rclcpp::executors::SingleThreadedExecutor* exec, std::string threadName);
 
@@ -74,15 +70,10 @@ public:
 };
 
 
-#ifdef TS_NODE
-class ImageSubNode : public vehicle_interfaces::PseudoTimeSyncNode
-#else
 class ImageSubNode : public rclcpp::Node
-#endif
 {
 private:
     rclcpp::Subscription<vehicle_interfaces::msg::Image>::SharedPtr subscription_;
-    std::string nodeName_;
     std::string outputDir_;
 
     cv::Mat recvMat_;
@@ -123,31 +114,21 @@ private:
         }
         catch(...)
         {
-            std::cerr << this->nodeName_ << " Unknown Exception.\n";
+            std::cerr << "[ImageSubNode::_topic_callback] Unknown Exception.\n";
         }
         recvMatLocker.unlock();
 #ifdef NODE_SUBSCRIBE_PRINT
         RCLCPP_INFO(this->get_logger(), "I heard: foramt: %d, width: %d, height: %d", 
             msg->format_order_type, msg->width, msg->height);
 #endif
-
-#ifdef TS_NODE
-        printf("Transmit time:\t%f ms\n", (this->getTimestamp() - (rclcpp::Time)(msg->header.stamp)).seconds() * 1000.0);
-#endif
     }
 
 public:
-    ImageSubNode(const std::string& nodeName, const std::string& topicName, cv::Mat& initMat) : 
-#ifdef TS_NODE
-        vehicle_interfaces::PseudoTimeSyncNode(nodeName), 
-#endif
-        rclcpp::Node(nodeName)
+    ImageSubNode(const std::string& nodeName, const std::string& topicName, cv::Mat& initMat) : rclcpp::Node(nodeName)
     {
         this->recvMat_ = initMat.clone();
-            this->outMat_ = initMat.clone();
-            this->newMatF_ = false;
-        this->nodeName_ = nodeName;
-
+        this->outMat_ = initMat.clone();
+        this->newMatF_ = false;
         this->subscription_ = this->create_subscription<vehicle_interfaces::msg::Image>(topicName, 
             10, std::bind(&ImageSubNode::_topic_callback, this, std::placeholders::_1));
     }
@@ -163,28 +144,20 @@ public:
     }
 };
 
-#ifdef TS_NODE
-class ImagePublisher : public vehicle_interfaces::TimeSyncNode
-#else
-class ImagePublisher : public rclcpp::Node
-#endif
+
+class GroundDetectPublisher : public vehicle_interfaces::TimeSyncNode
+
 {
 private:
-    std::shared_ptr<Params> params;
+    std::shared_ptr<Params> params_;
     rclcpp::Publisher<vehicle_interfaces::msg::Image>::SharedPtr pub_;
-    std::string nodeName_;
 
 public:
-    ImagePublisher(const std::shared_ptr<Params>& params) : 
-#ifdef TS_NODE
-    vehicle_interfaces::TimeSyncNode(params->topic_GroundDetect_nodeName, params->timesyncService, params->timesyncInterval_ms, params->timesyncAccuracy_ms), 
-#endif
-    rclcpp::Node(params->topic_GroundDetect_nodeName), 
-    params(params)
+    GroundDetectPublisher(const std::shared_ptr<Params>& params) : 
+        vehicle_interfaces::TimeSyncNode(params->topic_GroundDetect_nodeName, params->timesyncService, params->timesyncInterval_ms, params->timesyncAccuracy_ms), 
+        rclcpp::Node(params->topic_GroundDetect_nodeName), 
+        params_(params)
     {
-        this->nodeName_ = params->topic_GroundDetect_nodeName;
-
-
         this->pub_ = this->create_publisher<vehicle_interfaces::msg::Image>(params->topic_GroundDetect_topicName, 10);
     }
 
@@ -194,18 +167,13 @@ public:
         auto msg = vehicle_interfaces::msg::Image();
         msg.header.priority = vehicle_interfaces::msg::Header::PRIORITY_SENSOR;
         msg.header.device_type = vehicle_interfaces::msg::Header::DEVTYPE_IMAGE;
-        msg.header.device_id = this->nodeName_;
+        msg.header.device_id = this->params_->topic_GroundDetect_nodeName;
         msg.header.frame_id = frame_id++;
-#ifdef TS_NODE
         msg.header.stamp_type = this->getTimestampType();
         msg.header.stamp = this->getTimestamp();
         msg.header.stamp_offset = this->getCorrectDuration().nanoseconds();
-#else
-        msg.header.stamp_type = vehicle_interfaces::msg::Header::STAMPTYPE_NONE_UTC_SYNC;
-        msg.header.stamp = this->get_clock()->now();
-        msg.header.stamp_offset = 0;
-#endif
         msg.header.ref_publish_time_ms = 0;// Depend on ZED publisher
+
         msg.format_type = msg.FORMAT_JPEG;
         msg.width = sz.width;
         msg.height = sz.height;
@@ -215,21 +183,18 @@ public:
 };
 
 
-class ZEDNode
+class ZEDNode : public vehicle_interfaces::VehicleServiceNode
 {
 private:
     std::shared_ptr<Params> params_;
     std::shared_ptr<ImageSubNode> rgbNode_;
     std::shared_ptr<ImageSubNode> depthNode_;
-    std::shared_ptr<vehicle_interfaces::SafetyNode> safetyNode_;
 
     rclcpp::executors::SingleThreadedExecutor* rgbExec_;
     rclcpp::executors::SingleThreadedExecutor* depthExec_;
-    rclcpp::executors::SingleThreadedExecutor* safetyExec_;
 
     std::thread rgbNodeTh_;
     std::thread depthNodeTh_;
-    std::thread safetyNodeTh_;
 
     cv::Mat rgbInitMat_;
     cv::Mat depthInitMat_;
@@ -237,16 +202,14 @@ private:
     bool exitF_;
 
 public:
-    ZEDNode(std::shared_ptr<Params> params) : exitF_(false)
+    ZEDNode(const std::shared_ptr<Params>& params) : 
+        VehicleServiceNode(params), 
+        rclcpp::Node(params->nodeName), 
+        exitF_(false)
     {
         this->params_ = params;
         this->rgbInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_8UC3, cv::Scalar(50));
         this->depthInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_32FC1, cv::Scalar(50));
-        
-        this->safetyNode_ = std::make_shared<vehicle_interfaces::SafetyNode>(params->nodeName, params->safetyService);
-        this->safetyExec_ = new rclcpp::executors::SingleThreadedExecutor();
-        this->safetyExec_->add_node(this->safetyNode_);
-        this->safetyNodeTh_ = std::thread(SpinNodeExecutor, this->safetyExec_, params->nodeName + "_safety");
         
         this->rgbNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_RGB_nodeName, params->topic_ZEDCam_RGB_topicName, this->rgbInitMat_);
         this->rgbExec_ = new rclcpp::executors::SingleThreadedExecutor();
@@ -274,21 +237,14 @@ public:
         this->depthNode_->getImage(outputMat, newF);
     }
 
-    void setEmergency(float em)
-    {
-        this->safetyNode_->setEmergency(this->params_->nodeName, em);
-    }
-
     void close()
     {
         if (this->exitF_)
             return;
         this->rgbExec_->cancel();
         this->depthExec_->cancel();
-        this->safetyExec_->cancel();
         this->rgbNodeTh_.join();
         this->depthNodeTh_.join();
-        this->safetyNodeTh_.join();
         this->exitF_ = true;
     }
 };

@@ -200,7 +200,7 @@ int main(int argc, char **argv)
 	std::this_thread::sleep_for(1s);
 
 	// ImagePublisher (TODO: refine Image.msg)
-	auto imgPub = std::make_shared<ImagePublisher>(params);
+	auto imgPub = std::make_shared<GroundDetectPublisher>(params);
 	cv::Size pubImgSize(params->mainCameraWidth, params->mainCameraHeight);
 
     std::vector<int> encodeParam;
@@ -287,7 +287,7 @@ int main(int argc, char **argv)
 					em = 1.0 - nDist / 10000.0;
 				else
 					em = 1.0;
-				zedSub.setEmergency(em);
+				zedSub.setEmergency(params->nodeName, em);
 			}
 		}
 		else if (selectfunc == 2)
