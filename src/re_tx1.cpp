@@ -304,8 +304,11 @@ int main(int argc, char **argv)
 		cv::imshow("Left image", rgbmat_left);
 
 		// Image method (TODO: GroundDetect method)
-		cv::imencode(".jpg", rgbmat_left, pubImgVec, encodeParam);
-        imgPub->pubImage(pubImgVec, pubImgSize);
+		if (newRGBMatF || newDepthMatF)
+		{
+			cv::imencode(".jpg", rgbmat_left, pubImgVec, encodeParam);
+			imgPub->pubImage(pubImgVec, pubImgSize);
+		}
 	}
 END:
     zedSub.close();
