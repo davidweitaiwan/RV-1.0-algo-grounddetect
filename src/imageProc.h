@@ -70,7 +70,7 @@ public:
 };
 
 
-class ImageSubNode : public rclcpp::Node
+class ImageSubNode : public vehicle_interfaces::QoSUpdateNode
 {
 private:
     rclcpp::Subscription<vehicle_interfaces::msg::Image>::SharedPtr subscription_;
@@ -82,9 +82,10 @@ private:
 
     cv::Mat outMat_;
     std::mutex outMatLock_;
+    std::string topicName_;
 
 private:
-    void _topic_callback(const vehicle_interfaces::msg::Image::SharedPtr msg)// JPEG Only
+    void _topicCallback(const vehicle_interfaces::msg::Image::SharedPtr msg)// JPEG Only
     {
         std::unique_lock<std::mutex> recvMatLocker(this->recvMatLock_, std::defer_lock);
         std::unique_lock<std::mutex> outMatLocker(this->outMatLock_, std::defer_lock);
@@ -114,7 +115,7 @@ private:
         }
         catch(...)
         {
-            std::cerr << "[ImageSubNode::_topic_callback] Unknown Exception.\n";
+            std::cerr << "[ImageSubNode::_topicCallback] Unknown Exception.\n";
         }
         recvMatLocker.unlock();
 #ifdef NODE_SUBSCRIBE_PRINT
@@ -123,14 +124,37 @@ private:
 #endif
     }
 
+    void _qosCallback(std::map<std::string, rclcpp::QoS*> qmap)
+    { 
+        for (const auto& [k, v] : qmap)
+        {
+            if (k == this->topicName_ || k == (std::string)this->get_namespace() + "/" + this->topicName_)
+            {
+                this->subscription_.reset();
+                this->subscription_ = this->create_subscription<vehicle_interfaces::msg::Image>(this->topicName_, 
+                    *v, std::bind(&ImageSubNode::_topicCallback, this, std::placeholders::_1));
+            }
+        }
+    }
+
 public:
-    ImageSubNode(const std::string& nodeName, const std::string& topicName, cv::Mat& initMat) : rclcpp::Node(nodeName)
+    ImageSubNode(const std::string& nodeName, 
+                    const std::string& topicName, 
+                    cv::Mat& initMat, 
+                    const std::string& qosServiceName, 
+                    const std::string& qosDirPath) : 
+        vehicle_interfaces::QoSUpdateNode(nodeName, qosServiceName, qosDirPath), 
+        rclcpp::Node(nodeName), 
+            topicName_(topicName)
     {
         this->recvMat_ = initMat.clone();
         this->outMat_ = initMat.clone();
         this->newMatF_ = false;
+
+        this->addQoSCallbackFunc(std::bind(&ImageSubNode::_qosCallback, this, std::placeholders::_1));
+        vehicle_interfaces::QoSPair qpair = this->addQoSTracking(topicName);
         this->subscription_ = this->create_subscription<vehicle_interfaces::msg::Image>(topicName, 
-            10, std::bind(&ImageSubNode::_topic_callback, this, std::placeholders::_1));
+            *qpair.second, std::bind(&ImageSubNode::_topicCallback, this, std::placeholders::_1));
     }
 
     bool getImage(cv::Mat& outputMat, bool& newF)
@@ -145,20 +169,46 @@ public:
 };
 
 
-class GroundDetectPublisher : public vehicle_interfaces::TimeSyncNode
-
+class GroundDetectPublisher : public vehicle_interfaces::TimeSyncNode, public vehicle_interfaces::QoSUpdateNode
 {
 private:
     std::shared_ptr<Params> params_;
     rclcpp::Publisher<vehicle_interfaces::msg::Image>::SharedPtr pub_;
+    std::mutex pubLock_;
+
+private:
+    void _qosCallback(std::map<std::string, rclcpp::QoS*> qmap)
+    {
+        std::unique_lock<std::mutex> locker(this->pubLock_, std::defer_lock);
+        for (const auto& [k, v] : qmap)
+        {
+            if (k == this->params_->topic_GroundDetect_nodeName || k == (std::string)this->get_namespace() + "/" + this->params_->topic_GroundDetect_nodeName)
+            {
+                locker.lock();
+                this->pub_.reset();// Call destructor
+                this->pub_ = this->create_publisher<vehicle_interfaces::msg::Image>(this->params_->topic_GroundDetect_topicName, *v);
+                locker.unlock();
+            }
+        }
+    }
 
 public:
     GroundDetectPublisher(const std::shared_ptr<Params>& params) : 
-        vehicle_interfaces::TimeSyncNode(params->topic_GroundDetect_nodeName, params->timesyncService, params->timesyncInterval_ms, params->timesyncAccuracy_ms), 
+        vehicle_interfaces::TimeSyncNode(params->topic_GroundDetect_nodeName, params->timesyncService, params->timesyncPeriod_ms, params->timesyncAccuracy_ms), 
+        vehicle_interfaces::QoSUpdateNode(params->topic_GroundDetect_nodeName, params->qosService, params->qosDirPath), 
         rclcpp::Node(params->topic_GroundDetect_nodeName), 
         params_(params)
     {
-        this->pub_ = this->create_publisher<vehicle_interfaces::msg::Image>(params->topic_GroundDetect_topicName, 10);
+        this->addQoSCallbackFunc(std::bind(&GroundDetectPublisher::_qosCallback, this, std::placeholders::_1));
+        vehicle_interfaces::QoSPair qpair = this->addQoSTracking(params->topic_GroundDetect_topicName);
+        if (qpair.first == "")
+            RCLCPP_ERROR(this->get_logger(), "[GroundDetectPublisher] Failed to add topic to track list: %s", params->topic_GroundDetect_topicName);
+        else
+        {
+            RCLCPP_INFO(this->get_logger(), "[GroundDetectPublisher] QoS profile [%s]:\nDepth: %d\nReliability: %d", 
+                qpair.first.c_str(), qpair.second->get_rmw_qos_profile().depth, qpair.second->get_rmw_qos_profile().reliability);
+        }
+        this->pub_ = this->create_publisher<vehicle_interfaces::msg::Image>(params->topic_GroundDetect_topicName, *qpair.second);
     }
 
     void pubImage(const std::vector<uchar>& dataVec, const cv::Size& sz)
@@ -178,7 +228,11 @@ public:
         msg.width = sz.width;
         msg.height = sz.height;
         msg.data = dataVec;
+
+        std::unique_lock<std::mutex> locker(this->pubLock_, std::defer_lock);
+        locker.lock();
         this->pub_->publish(msg);
+        locker.unlock();
     }
 };
 
@@ -211,12 +265,20 @@ public:
         this->rgbInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_8UC3, cv::Scalar(50));
         this->depthInitMat_ = cv::Mat(params->mainCameraHeight, params->mainCameraWidth, CV_32FC1, cv::Scalar(50));
         
-        this->rgbNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_RGB_nodeName, params->topic_ZEDCam_RGB_topicName, this->rgbInitMat_);
+        this->rgbNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_RGB_nodeName, 
+                                                        params->topic_ZEDCam_RGB_topicName, 
+                                                        this->rgbInitMat_, 
+                                                        params->qosService, 
+                                                        params->qosDirPath);
         this->rgbExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->rgbExec_->add_node(this->rgbNode_);
         this->rgbNodeTh_ = std::thread(SpinNodeExecutor, this->rgbExec_, params->topic_ZEDCam_RGB_nodeName);
         
-        this->depthNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_Depth_nodeName, params->topic_ZEDCam_Depth_topicName, this->depthInitMat_);
+        this->depthNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_Depth_nodeName, 
+                                                            params->topic_ZEDCam_Depth_topicName, 
+                                                            this->depthInitMat_, 
+                                                            params->qosService, 
+                                                            params->qosDirPath);
         this->depthExec_ = new rclcpp::executors::SingleThreadedExecutor();
         this->depthExec_->add_node(this->depthNode_);
         this->depthNodeTh_ = std::thread(SpinNodeExecutor, this->depthExec_, params->topic_ZEDCam_Depth_nodeName);
