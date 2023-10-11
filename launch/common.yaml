@@ -1,4 +1,4 @@
-#ver=1.2
+#ver=1.3
 ---
 topic_ZEDCam_RGB: # Recv ZED RGB Image
     nodeName : "grounddetect_rgb" # Automatically formed to "<nodeName>_<id>_node"
@@ -30,6 +30,7 @@ generic_prop:
     # Device information service configuration
     devInfoService : "" # Service name devinfo_0
     devInterface : "eth0" # eth0
+    devMultiNode : True # False
 
     # QoS service configuration
     qosService : "qos_0" # Service name qos_0
