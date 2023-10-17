@@ -202,7 +202,7 @@ public:
         this->addQoSCallbackFunc(std::bind(&GroundDetectPublisher::_qosCallback, this, std::placeholders::_1));
         vehicle_interfaces::QoSPair qpair = this->addQoSTracking(params->topic_GroundDetect_topicName);
         if (qpair.first == "")
-            RCLCPP_ERROR(this->get_logger(), "[GroundDetectPublisher] Failed to add topic to track list: %s", params->topic_GroundDetect_topicName);
+            RCLCPP_ERROR(this->get_logger(), "[GroundDetectPublisher] Failed to add topic to track list: %s", params->topic_GroundDetect_topicName.c_str());
         else
         {
             RCLCPP_INFO(this->get_logger(), "[GroundDetectPublisher] QoS profile [%s]:\nDepth: %d\nReliability: %d", 
