@@ -194,7 +194,7 @@ private:
 
 public:
     GroundDetectPublisher(const std::shared_ptr<Params>& params) : 
-        vehicle_interfaces::TimeSyncNode(params->topic_GroundDetect_nodeName, params->timesyncService, params->timesyncPeriod_ms, params->timesyncAccuracy_ms), 
+        vehicle_interfaces::TimeSyncNode(params->topic_GroundDetect_nodeName, params->timesyncService, params->timesyncPeriod_ms, params->timesyncAccuracy_ms, params->timesyncWaitService), 
         vehicle_interfaces::QoSUpdateNode(params->topic_GroundDetect_nodeName, params->qosService, params->qosDirPath), 
         rclcpp::Node(params->topic_GroundDetect_nodeName), 
         params_(params)
