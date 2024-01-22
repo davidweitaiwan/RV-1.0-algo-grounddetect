@@ -16,6 +16,10 @@ camera_prop:
     width : 640 # Publish resolution
     height : 360
 
+safety_prop:
+    direction : 0 # [F, B, L, R, FL, FR, BL, BR]
+    alert_distance_mm : 1500.0
+
 # Settings for Params class under vehicle_interfaces/params.h
 generic_prop:
     # Node name and namespace. The namespace will automatically adding prefix at node name, topic name, service name, etc..

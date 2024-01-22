@@ -37,6 +37,9 @@ public:
     int mainCameraWidth = 1280;
     int mainCameraHeight = 720;
 
+    int safetyDirection = 0;// See EmergencyScoreDirection under safety.h
+    float safetyDistance = 1500.0;
+
 private:
     void _getParams()
     {
@@ -50,6 +53,9 @@ private:
 
         this->get_parameter("mainCameraWidth", this->mainCameraWidth);
         this->get_parameter("mainCameraHeight", this->mainCameraHeight);
+
+        this->get_parameter("safetyDirection", this->safetyDirection);
+        this->get_parameter("safetyDistance", this->safetyDistance);
     }
 
 public:
@@ -65,6 +71,9 @@ public:
 
         this->declare_parameter<int>("mainCameraWidth", this->mainCameraWidth);
         this->declare_parameter<int>("mainCameraHeight", this->mainCameraHeight);
+
+        this->declare_parameter<int>("safetyDirection", this->safetyDirection);
+        this->declare_parameter<float>("safetyDistance", this->safetyDistance);
         this->_getParams();
     }
 };

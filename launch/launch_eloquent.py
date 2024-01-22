@@ -36,6 +36,8 @@ def generate_launch_description():
                     "topic_GroundDetect_topicName" : data['topic_GroundDetect']['topicName'] + '_' + str(data['generic_prop']['id']), 
                     "mainCameraWidth" : data['camera_prop']['width'], 
                     "mainCameraHeight" : data['camera_prop']['height'], 
+                    "safetyDirection" : data['safety_prop']['direction'], 
+                    "safetyDistance" : data['safety_prop']['alert_distance_mm'], 
 
                     # Settings for Params class under vehicle_interfaces/params.h
                     # Do not change the settings rashly

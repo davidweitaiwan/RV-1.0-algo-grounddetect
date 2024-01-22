@@ -283,11 +283,11 @@ int main(int argc, char **argv)
 				gnddot.gnddotline(depthmat, rgbmat_left, cammod.cammodz, cammod.cammodx, obsprk, calibflag, Wflag, radarflag);
 				float nDist = gnddot.getNearestDepth();
 				float em = 0.0;
-				if (nDist > 1000)
-					em = 1.0 - nDist / 10000.0;
+				if (nDist > params->safetyDistance)
+					em = 0.0;
 				else
 					em = 1.0;
-				zedSub.setEmergency(params->nodeName, em);
+				zedSub.setEmergency(params->nodeName, em, (vehicle_interfaces::EmergencyScoreDirection)params->safetyDirection);
 			}
 		}
 		else if (selectfunc == 2)
