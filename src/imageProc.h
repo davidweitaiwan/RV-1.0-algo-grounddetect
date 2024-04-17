@@ -6,6 +6,7 @@
 
 #include "vehicle_interfaces/msg/image.hpp"
 
+#include "vehicle_interfaces/utils.h"
 #include "vehicle_interfaces/vehicle_interfaces.h"
 
 #include <opencv2/opencv.hpp>
@@ -17,9 +18,6 @@
 
 using namespace std::placeholders;
 using namespace std::chrono_literals;
-
-void SpinNodeExecutor(rclcpp::executors::SingleThreadedExecutor* exec, std::string threadName);
-
 
 class Params : public vehicle_interfaces::GenericParams
 {
@@ -253,11 +251,11 @@ private:
     std::shared_ptr<ImageSubNode> rgbNode_;
     std::shared_ptr<ImageSubNode> depthNode_;
 
-    rclcpp::executors::SingleThreadedExecutor* rgbExec_;
-    rclcpp::executors::SingleThreadedExecutor* depthExec_;
+    std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> rgbExec_;
+    std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> depthExec_;
 
-    std::thread rgbNodeTh_;
-    std::thread depthNodeTh_;
+    vehicle_interfaces::unique_thread rgbNodeTh_;
+    vehicle_interfaces::unique_thread depthNodeTh_;
 
     cv::Mat rgbInitMat_;
     cv::Mat depthInitMat_;
@@ -279,18 +277,18 @@ public:
                                                         this->rgbInitMat_, 
                                                         params->qosService, 
                                                         params->qosDirPath);
-        this->rgbExec_ = new rclcpp::executors::SingleThreadedExecutor();
+        this->rgbExec_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
         this->rgbExec_->add_node(this->rgbNode_);
-        this->rgbNodeTh_ = std::thread(SpinNodeExecutor, this->rgbExec_, params->topic_ZEDCam_RGB_nodeName);
+        this->rgbNodeTh_ = vehicle_interfaces::make_unique_thread(vehicle_interfaces::SpinExecutor, this->rgbExec_, params->topic_ZEDCam_RGB_nodeName, 1000.0);
         
         this->depthNode_ = std::make_shared<ImageSubNode>(params->topic_ZEDCam_Depth_nodeName, 
                                                             params->topic_ZEDCam_Depth_topicName, 
                                                             this->depthInitMat_, 
                                                             params->qosService, 
                                                             params->qosDirPath);
-        this->depthExec_ = new rclcpp::executors::SingleThreadedExecutor();
+        this->depthExec_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
         this->depthExec_->add_node(this->depthNode_);
-        this->depthNodeTh_ = std::thread(SpinNodeExecutor, this->depthExec_, params->topic_ZEDCam_Depth_nodeName);
+        this->depthNodeTh_ = vehicle_interfaces::make_unique_thread(vehicle_interfaces::SpinExecutor, this->depthExec_, params->topic_ZEDCam_Depth_nodeName, 1000.0);
     }
 
     ~ZEDNode()
@@ -314,8 +312,8 @@ public:
             return;
         this->rgbExec_->cancel();
         this->depthExec_->cancel();
-        this->rgbNodeTh_.join();
-        this->depthNodeTh_.join();
+        this->rgbNodeTh_.reset(nullptr);
+        this->depthNodeTh_.reset(nullptr);
         this->exitF_ = true;
     }
 };
@@ -445,23 +443,3 @@ public:
         return this->rateVec_;
     }
 };
-
-
-/**
- * Functions
- */
-void SpinNodeExecutor(rclcpp::executors::SingleThreadedExecutor* exec, std::string threadName)
-{
-    std::this_thread::sleep_for(1s);
-    std::cerr << threadName << " start..." << std::endl;
-    exec->spin();
-    std::cerr << threadName << " exit." << std::endl;
-}
-
-void SpinNode(std::shared_ptr<rclcpp::Node> sub, std::string threadName)
-{
-    std::cerr << threadName << " start..." << std::endl;
-    rclcpp::spin(sub);
-    std::cerr << threadName << " exit." << std::endl;
-    rclcpp::shutdown();
-}
